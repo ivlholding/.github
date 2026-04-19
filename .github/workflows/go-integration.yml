@@ -54,6 +54,9 @@ jobs:
           git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
+          # Purge any stale VCS cache poisoned by previous runs (esp. on
+          # self-hosted runners where /root/go/pkg/mod persists).
+          rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
 
       - name: Reset any leftover compose state
         run: docker compose -f ${{ inputs.compose-file }} down -v --remove-orphans || true

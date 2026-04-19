@@ -53,6 +53,9 @@ jobs:
           git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
+          # Purge any stale VCS cache poisoned by previous runs (esp. on
+          # self-hosted runners where /root/go/pkg/mod persists).
+          rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - uses: golangci/golangci-lint-action@v7
         with:
           version: latest
@@ -75,6 +78,9 @@ jobs:
           git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
+          # Purge any stale VCS cache poisoned by previous runs (esp. on
+          # self-hosted runners where /root/go/pkg/mod persists).
+          rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
       - name: Coverage summary
@@ -104,4 +110,7 @@ jobs:
           git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
+          # Purge any stale VCS cache poisoned by previous runs (esp. on
+          # self-hosted runners where /root/go/pkg/mod persists).
+          rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - run: go build ./...
