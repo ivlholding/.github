@@ -34,7 +34,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # reserved for future keyless/OIDC variant
+  id-token: write       # OIDC for keyless attestation (SLSA-3 provenance)
+  attestations: write   # GitHub-native attestation storage
+  packages: write       # push to GHCR fallback
 
 jobs:
   build:
@@ -68,11 +70,44 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
-      - name: Sign
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOM
+        run: syft "$IMAGE" -o cyclonedx-json=sbom.cdx.json -o spdx-json=sbom.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.service-name }}-${{ github.ref_name }}
+          path: |
+            sbom.cdx.json
+            sbom.spdx.json
+
+      - name: Sign image
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: cosign sign --yes --key env://COSIGN_KEY "$IMAGE"
 
+      - name: Attest SBOM (in-toto)
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign attest --yes --key env://COSIGN_KEY --predicate sbom.cdx.json --type cyclonedx "$IMAGE"
+
       - name: Push
-        run: docker push "$IMAGE"
+        id: push
+        run: |
+          DIGEST=$(docker push "$IMAGE" --format json | jq -r '.[0].digest // empty')
+          if [ -z "$DIGEST" ]; then
+            # Fallback: newer docker CLI prints digest on stdout.
+            DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE" | awk -F@ '{print $2}')
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: SLSA-3 build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ inputs.registry }}/${{ inputs.service-name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
