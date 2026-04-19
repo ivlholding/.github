@@ -1,0 +1,78 @@
+name: Reusable Go CI
+
+# Lint + unit test + build for any Go module. Called via `workflow_call`.
+# Keep this strictly language-level; integration stacks live in go-integration.yml.
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: "Go toolchain version"
+        type: string
+        required: false
+        default: "1.25"
+      runner:
+        description: "Runner label(s) — default self-hosted"
+        type: string
+        required: false
+        default: "self-hosted"
+      run-tests:
+        description: "Whether to run go test (some pure-proto repos don't need it)"
+        type: boolean
+        required: false
+        default: true
+      coverage:
+        description: "Emit coverage profile as artifact"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+
+  test:
+    if: inputs.run-tests
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+      - name: Unit tests
+        run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
+      - name: Coverage summary
+        if: inputs.coverage
+        run: go tool cover -func=coverage.out | tail -20
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.coverage
+        with:
+          name: coverage-report
+          path: coverage.out
+
+  build:
+    runs-on: ${{ inputs.runner }}
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+      - run: go build ./...

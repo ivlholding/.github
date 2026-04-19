@@ -1,0 +1,78 @@
+name: Reusable image build
+
+# Build → Trivy CRITICAL gate → Cosign sign → push to Zot.
+# Called on tag `v*` from per-service image.yml workflows.
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Logical service name — used as image repo suffix"
+        type: string
+        required: true
+      dockerfile:
+        type: string
+        default: "Dockerfile"
+      context:
+        type: string
+        default: "."
+      registry:
+        type: string
+        default: "zot.internal/scraper"
+      runner:
+        type: string
+        default: "self-hosted"
+    secrets:
+      COSIGN_KEY:
+        required: true
+      COSIGN_PASSWORD:
+        required: false
+      REGISTRY_USER:
+        required: true
+      REGISTRY_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write  # reserved for future keyless/OIDC variant
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    env:
+      IMAGE: ${{ inputs.registry }}/${{ inputs.service-name }}:${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Registry login
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ inputs.registry }} -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Build
+        run: docker build -f ${{ inputs.dockerfile }} -t "$IMAGE" ${{ inputs.context }}
+
+      - name: Trivy CRITICAL gate
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Trivy HIGH report (non-blocking)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: HIGH
+          exit-code: '0'
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign sign --yes --key env://COSIGN_KEY "$IMAGE"
+
+      - name: Push
+        run: docker push "$IMAGE"

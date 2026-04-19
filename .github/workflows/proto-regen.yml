@@ -1,0 +1,49 @@
+name: Reusable proto regen check
+
+# Verifies `buf generate` output matches the committed generated code.
+# Fails CI if protos were changed without regenerating stubs.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        type: string
+        default: "ubuntu-latest"
+      buf-version:
+        type: string
+        default: "1.40.1"
+      go-version:
+        type: string
+        default: "1.25"
+
+permissions:
+  contents: read
+
+jobs:
+  proto-regen:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ inputs.buf-version }}
+
+      - name: buf lint
+        run: buf lint
+
+      - name: buf breaking (against main)
+        if: github.event_name == 'pull_request'
+        run: buf breaking --against "https://github.com/${{ github.repository }}.git#branch=main"
+
+      - name: Regenerate
+        run: buf generate
+
+      - name: Assert generated code is up to date
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated proto stubs are stale. Run 'buf generate' locally and commit."
+            exit 1
+          fi

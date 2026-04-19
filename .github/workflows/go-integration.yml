@@ -1,0 +1,72 @@
+name: Reusable Go integration
+
+# Bring up a docker-compose stack, wait for health, run `-tags=integration` tests.
+# Callers pass their compose file path and an optional list of services to wait for.
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        type: string
+        default: "1.25"
+      runner:
+        type: string
+        default: "self-hosted"
+      compose-file:
+        description: "Path to docker-compose file"
+        type: string
+        default: "docker-compose.test.yml"
+      services:
+        description: "Space-separated services to `up -d`"
+        type: string
+        default: ""
+      test-env:
+        description: "Extra `KEY=VAL` lines to inject into go test env (one per line)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Reset any leftover compose state
+        run: docker compose -f ${{ inputs.compose-file }} down -v --remove-orphans || true
+
+      - name: Start stack
+        run: docker compose -f ${{ inputs.compose-file }} up -d ${{ inputs.services }}
+
+      - name: Wait for services (60s total)
+        run: |
+          # Poll each service via its compose healthcheck until healthy or timeout.
+          end=$((SECONDS + 60))
+          while [ $SECONDS -lt $end ]; do
+            unhealthy=$(docker compose -f ${{ inputs.compose-file }} ps --format json \
+              | jq -r 'select(.Health != "" and .Health != "healthy") | .Name' || true)
+            [ -z "$unhealthy" ] && { echo "all healthy"; break; }
+            sleep 2
+          done
+
+      - name: Integration tests
+        run: |
+          while IFS= read -r line; do
+            [ -n "$line" ] && export "$line"
+          done <<< "${{ inputs.test-env }}"
+          go test -tags=integration -race -count=1 ./...
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f ${{ inputs.compose-file }} logs --no-color --tail=200
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f ${{ inputs.compose-file }} down -v --remove-orphans
