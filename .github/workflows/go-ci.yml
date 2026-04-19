@@ -50,11 +50,16 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
-          go env -w GOPRIVATE="github.com/ivlholding/*"
-          go env -w GOSUMDB=off
-          # Purge any stale VCS cache poisoned by previous runs (esp. on
-          # self-hosted runners where /root/go/pkg/mod persists).
+          # Use env-var-based git config so the rewrite is scoped to this
+          # job and every child process inherits it (including git invoked
+          # by `go mod download`). Independent of $HOME / user changes,
+          # which have bitten us on self-hosted runners.
+          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
+          echo "GOSUMDB=off" >> "$GITHUB_ENV"
+          # Purge stale VCS cache that may have cached bad credentials.
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -75,11 +80,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
-          go env -w GOPRIVATE="github.com/ivlholding/*"
-          go env -w GOSUMDB=off
-          # Purge any stale VCS cache poisoned by previous runs (esp. on
-          # self-hosted runners where /root/go/pkg/mod persists).
+          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
+          echo "GOSUMDB=off" >> "$GITHUB_ENV"
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
@@ -107,9 +112,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
-          go env -w GOPRIVATE="github.com/ivlholding/*"
-          go env -w GOSUMDB=off
+          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
+          echo "GOSUMDB=off" >> "$GITHUB_ENV"
           # Purge any stale VCS cache poisoned by previous runs (esp. on
           # self-hosted runners where /root/go/pkg/mod persists).
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true

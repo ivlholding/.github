@@ -51,11 +51,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
-          go env -w GOPRIVATE="github.com/ivlholding/*"
-          go env -w GOSUMDB=off
-          # Purge any stale VCS cache poisoned by previous runs (esp. on
-          # self-hosted runners where /root/go/pkg/mod persists).
+          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
+          echo "GOSUMDB=off" >> "$GITHUB_ENV"
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
 
       - name: Reset any leftover compose state
