@@ -2,30 +2,35 @@ name: Reusable Go CI
 
 # Lint + unit test + build for any Go module. Called via `workflow_call`.
 # Keep this strictly language-level; integration stacks live in go-integration.yml.
+#
+# Private module support: set `private-modules: true` and pass `secrets.IVL_MODULES_TOKEN`
+# (a fine-grained PAT with Contents:Read on ivlholding/*). The workflow then configures
+# GOPRIVATE + GOSUMDB=off + a git insteadOf rewrite so `go mod download` can fetch
+# private repos like scraper-core.
 
 on:
   workflow_call:
     inputs:
       go-version:
-        description: "Go toolchain version"
         type: string
-        required: false
         default: "1.25"
       runner:
-        description: "Runner label(s) — default self-hosted"
         type: string
-        required: false
         default: "self-hosted"
       run-tests:
-        description: "Whether to run go test (some pure-proto repos don't need it)"
         type: boolean
-        required: false
         default: true
       coverage:
-        description: "Emit coverage profile as artifact"
         type: boolean
-        required: false
         default: true
+      private-modules:
+        description: "Enable GOPRIVATE + git insteadOf for ivlholding/* access"
+        type: boolean
+        default: false
+    secrets:
+      IVL_MODULES_TOKEN:
+        description: "PAT with read access to ivlholding/* repos (required when private-modules=true)"
+        required: false
 
 permissions:
   contents: read
@@ -40,6 +45,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Configure private module access
+        if: inputs.private-modules
+        env:
+          TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          go env -w GOPRIVATE="github.com/ivlholding/*"
+          go env -w GOSUMDB=off
       - uses: golangci/golangci-lint-action@v7
         with:
           version: latest
@@ -54,6 +67,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Configure private module access
+        if: inputs.private-modules
+        env:
+          TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          go env -w GOPRIVATE="github.com/ivlholding/*"
+          go env -w GOSUMDB=off
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
       - name: Coverage summary
@@ -75,4 +96,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Configure private module access
+        if: inputs.private-modules
+        env:
+          TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          go env -w GOPRIVATE="github.com/ivlholding/*"
+          go env -w GOSUMDB=off
       - run: go build ./...
