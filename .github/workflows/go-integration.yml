@@ -24,6 +24,13 @@ on:
         description: "Extra `KEY=VAL` lines to inject into go test env (one per line)"
         type: string
         default: ""
+      private-modules:
+        description: "Enable GOPRIVATE + git insteadOf for ivlholding/* access"
+        type: boolean
+        default: false
+    secrets:
+      IVL_MODULES_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -38,6 +45,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
+
+      - name: Configure private module access
+        if: inputs.private-modules
+        env:
+          TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          go env -w GOPRIVATE="github.com/ivlholding/*"
+          go env -w GOSUMDB=off
 
       - name: Reset any leftover compose state
         run: docker compose -f ${{ inputs.compose-file }} down -v --remove-orphans || true
