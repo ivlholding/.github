@@ -17,6 +17,10 @@ on:
       go-version:
         type: string
         default: "1.25"
+      enable-codeql:
+        description: "Run CodeQL. Requires GHAS on private repos; auto-works on public."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,6 +30,7 @@ permissions:
 jobs:
   codeql:
     name: CodeQL
+    if: inputs.enable-codeql
     runs-on: ${{ inputs.runner }}
     strategy:
       fail-fast: false
