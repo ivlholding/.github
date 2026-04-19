@@ -50,7 +50,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --global url."https://${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
       - uses: golangci/golangci-lint-action@v7
@@ -72,7 +72,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --global url."https://${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
       - name: Unit tests
@@ -101,7 +101,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --global url."https://${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
           go env -w GOPRIVATE="github.com/ivlholding/*"
           go env -w GOSUMDB=off
       - run: go build ./...
