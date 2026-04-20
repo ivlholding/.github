@@ -39,6 +39,28 @@ jobs:
   lint:
     runs-on: ${{ inputs.runner }}
     steps:
+      # Self-hosted runners persist $HOME across jobs, so any git config
+      # --global set by a previous workflow run (including a stale
+      # http.<ivlholding>.extraheader with an old token) is active when
+      # actions/checkout runs. Wipe every such value before checkout so
+      # the workflow's own GITHUB_TOKEN — which is what checkout relies
+      # on for the caller repo itself — wins uncontested.
+      - name: Reset persistent ivlholding git auth state
+        run: |
+          # Remove every http.* extraheader scoped to an ivlholding URL.
+          # Leave non-ivlholding entries alone so unrelated configs
+          # survive.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
+          # Also defensively drop any leftover url.*.insteadOf rewrites we
+          # used in earlier attempts; they're no longer part of the
+          # contract.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
+          # Wipe any stale netrc a previous run wrote.
+          rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
           clean: true
@@ -117,6 +139,28 @@ jobs:
     if: inputs.run-tests
     runs-on: ${{ inputs.runner }}
     steps:
+      # Self-hosted runners persist $HOME across jobs, so any git config
+      # --global set by a previous workflow run (including a stale
+      # http.<ivlholding>.extraheader with an old token) is active when
+      # actions/checkout runs. Wipe every such value before checkout so
+      # the workflow's own GITHUB_TOKEN — which is what checkout relies
+      # on for the caller repo itself — wins uncontested.
+      - name: Reset persistent ivlholding git auth state
+        run: |
+          # Remove every http.* extraheader scoped to an ivlholding URL.
+          # Leave non-ivlholding entries alone so unrelated configs
+          # survive.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
+          # Also defensively drop any leftover url.*.insteadOf rewrites we
+          # used in earlier attempts; they're no longer part of the
+          # contract.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
+          # Wipe any stale netrc a previous run wrote.
+          rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
           clean: true
@@ -173,6 +217,28 @@ jobs:
     runs-on: ${{ inputs.runner }}
     needs: [lint]
     steps:
+      # Self-hosted runners persist $HOME across jobs, so any git config
+      # --global set by a previous workflow run (including a stale
+      # http.<ivlholding>.extraheader with an old token) is active when
+      # actions/checkout runs. Wipe every such value before checkout so
+      # the workflow's own GITHUB_TOKEN — which is what checkout relies
+      # on for the caller repo itself — wins uncontested.
+      - name: Reset persistent ivlholding git auth state
+        run: |
+          # Remove every http.* extraheader scoped to an ivlholding URL.
+          # Leave non-ivlholding entries alone so unrelated configs
+          # survive.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
+          # Also defensively drop any leftover url.*.insteadOf rewrites we
+          # used in earlier attempts; they're no longer part of the
+          # contract.
+          while IFS= read -r key; do
+            git config --global --unset-all "$key" 2>/dev/null || true
+          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
+          # Wipe any stale netrc a previous run wrote.
+          rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
           clean: true
