@@ -90,11 +90,18 @@ jobs:
           # not persist to $HOME on self-hosted runners. Overrides
           # actions/checkout's --local extraheader because it's set to
           # a longer prefix match at --global tier.
+          # Set via BOTH env-scoped config (inherited by child git
+          # processes in subsequent steps) AND --global (visible to the
+          # `git ls-remote` test we run right below in this same step,
+          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
+          # guarantees there's no stale --global extraheader that would
+          # have broken actions/checkout itself.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
+          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           # Netrc defense-in-depth for Go's direct-proxy fallback path.
           # Fine-grained PATs authenticate with login=oauth2 (NOT
           # x-access-token) over netrc basic auth.
@@ -124,7 +131,7 @@ jobs:
           else
             code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
               "https://api.github.com/repos/ivlholding/scraper-apis")
-            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  REST API GET /repos/ivlholding/scraper-apis -> HTTP $code"
             echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
             if [ "$code" != "200" ]; then
               echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
@@ -132,6 +139,18 @@ jobs:
               echo "    - token expired / revoked"
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
+          fi
+          # Verify the extraheader route works with the same token git will
+          # use via `go mod download`. If this fails but the REST probe
+          # above succeeded, the extraheader is not being applied — likely
+          # because actions/checkout's --local config is winning over our
+          # env/--global config for the caller repo's directory.
+          echo "--- git ls-remote probe (via --global extraheader) ---"
+          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0"
+          else
+            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
+            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
           fi
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -176,11 +195,18 @@ jobs:
         run: |
           # See lint job for the full rationale. Env-scoped git config so
           # nothing persists across runs on self-hosted runners.
+          # Set via BOTH env-scoped config (inherited by child git
+          # processes in subsequent steps) AND --global (visible to the
+          # `git ls-remote` test we run right below in this same step,
+          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
+          # guarantees there's no stale --global extraheader that would
+          # have broken actions/checkout itself.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
+          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
@@ -199,7 +225,7 @@ jobs:
           else
             code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
               "https://api.github.com/repos/ivlholding/scraper-apis")
-            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  REST API GET /repos/ivlholding/scraper-apis -> HTTP $code"
             echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
             if [ "$code" != "200" ]; then
               echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
@@ -207,6 +233,18 @@ jobs:
               echo "    - token expired / revoked"
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
+          fi
+          # Verify the extraheader route works with the same token git will
+          # use via `go mod download`. If this fails but the REST probe
+          # above succeeded, the extraheader is not being applied — likely
+          # because actions/checkout's --local config is winning over our
+          # env/--global config for the caller repo's directory.
+          echo "--- git ls-remote probe (via --global extraheader) ---"
+          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0"
+          else
+            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
+            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
           fi
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
@@ -258,11 +296,18 @@ jobs:
         run: |
           # See lint job for the full rationale. Env-scoped git config so
           # nothing persists across runs on self-hosted runners.
+          # Set via BOTH env-scoped config (inherited by child git
+          # processes in subsequent steps) AND --global (visible to the
+          # `git ls-remote` test we run right below in this same step,
+          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
+          # guarantees there's no stale --global extraheader that would
+          # have broken actions/checkout itself.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
+          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
@@ -281,7 +326,7 @@ jobs:
           else
             code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
               "https://api.github.com/repos/ivlholding/scraper-apis")
-            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  REST API GET /repos/ivlholding/scraper-apis -> HTTP $code"
             echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
             if [ "$code" != "200" ]; then
               echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
@@ -289,5 +334,17 @@ jobs:
               echo "    - token expired / revoked"
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
+          fi
+          # Verify the extraheader route works with the same token git will
+          # use via `go mod download`. If this fails but the REST probe
+          # above succeeded, the extraheader is not being applied — likely
+          # because actions/checkout's --local config is winning over our
+          # env/--global config for the caller repo's directory.
+          echo "--- git ls-remote probe (via --global extraheader) ---"
+          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0"
+          else
+            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
+            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
           fi
       - run: go build ./...
