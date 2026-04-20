@@ -39,27 +39,21 @@ jobs:
   lint:
     runs-on: ${{ inputs.runner }}
     steps:
-      # Self-hosted runners persist $HOME across jobs, so any git config
-      # --global set by a previous workflow run (including a stale
-      # http.<ivlholding>.extraheader with an old token) is active when
-      # actions/checkout runs. Wipe every such value before checkout so
-      # the workflow's own GITHUB_TOKEN — which is what checkout relies
-      # on for the caller repo itself — wins uncontested.
-      - name: Reset persistent ivlholding git auth state
+      # Self-hosted runners persist $HOME across jobs. Any git config
+      # --global set by a previous workflow run (stale extraheader,
+      # credential helper, url rewrite) is active when actions/checkout
+      # runs next. Wipe *every* http.* and url.* global config so the
+      # workflow's own GITHUB_TOKEN is the only credential in play for
+      # the caller-repo checkout. Configure-private-module-access below
+      # re-adds only env-scoped config that doesn't persist.
+      - name: Reset persistent git auth state
         run: |
-          # Remove every http.* extraheader scoped to an ivlholding URL.
-          # Leave non-ivlholding entries alone so unrelated configs
-          # survive.
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
-          # Also defensively drop any leftover url.*.insteadOf rewrites we
-          # used in earlier attempts; they're no longer part of the
-          # contract.
+          done < <(git config --global --name-only --get-regexp '^http\.' || true)
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
-          # Wipe any stale netrc a previous run wrote.
+          done < <(git config --global --name-only --get-regexp '^url\.' || true)
           rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
@@ -90,18 +84,16 @@ jobs:
           # not persist to $HOME on self-hosted runners. Overrides
           # actions/checkout's --local extraheader because it's set to
           # a longer prefix match at --global tier.
-          # Set via BOTH env-scoped config (inherited by child git
-          # processes in subsequent steps) AND --global (visible to the
-          # `git ls-remote` test we run right below in this same step,
-          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
-          # guarantees there's no stale --global extraheader that would
-          # have broken actions/checkout itself.
+          # Env-scoped git config ONLY — nothing in --global, so nothing
+          # persists to $HOME on self-hosted runners to break the next
+          # run's actions/checkout. Child processes (including git
+          # subprocesses spawned by Go) inherit the env and apply the
+          # extraheader at run time.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
-          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           # Netrc defense-in-depth for Go's direct-proxy fallback path.
           # Fine-grained PATs authenticate with login=oauth2 (NOT
           # x-access-token) over netrc basic auth.
@@ -140,17 +132,19 @@ jobs:
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
           fi
-          # Verify the extraheader route works with the same token git will
-          # use via `go mod download`. If this fails but the REST probe
-          # above succeeded, the extraheader is not being applied — likely
-          # because actions/checkout's --local config is winning over our
-          # env/--global config for the caller repo's directory.
-          echo "--- git ls-remote probe (via --global extraheader) ---"
-          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
-            echo "  OK: git can reach scraper-apis v0.2.0"
+          # Verify the extraheader route works with the live env config.
+          # env-scoped config only takes effect when git is invoked by the
+          # parent shell that runs this step, so we need to set the env
+          # vars locally to exercise it (GitHub exports $GITHUB_ENV only
+          # to subsequent steps, not the current one).
+          echo "--- git ls-remote probe (via env-scoped extraheader) ---"
+          if GIT_CONFIG_COUNT=1 \
+             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+             GIT_CONFIG_VALUE_0="Authorization: token $TOKEN" \
+             git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0 with env-scoped extraheader"
           else
-            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
-            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
+            echo "  FAIL: git ls-remote rejected the env-scoped extraheader."
           fi
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -160,27 +154,21 @@ jobs:
     if: inputs.run-tests
     runs-on: ${{ inputs.runner }}
     steps:
-      # Self-hosted runners persist $HOME across jobs, so any git config
-      # --global set by a previous workflow run (including a stale
-      # http.<ivlholding>.extraheader with an old token) is active when
-      # actions/checkout runs. Wipe every such value before checkout so
-      # the workflow's own GITHUB_TOKEN — which is what checkout relies
-      # on for the caller repo itself — wins uncontested.
-      - name: Reset persistent ivlholding git auth state
+      # Self-hosted runners persist $HOME across jobs. Any git config
+      # --global set by a previous workflow run (stale extraheader,
+      # credential helper, url rewrite) is active when actions/checkout
+      # runs next. Wipe *every* http.* and url.* global config so the
+      # workflow's own GITHUB_TOKEN is the only credential in play for
+      # the caller-repo checkout. Configure-private-module-access below
+      # re-adds only env-scoped config that doesn't persist.
+      - name: Reset persistent git auth state
         run: |
-          # Remove every http.* extraheader scoped to an ivlholding URL.
-          # Leave non-ivlholding entries alone so unrelated configs
-          # survive.
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
-          # Also defensively drop any leftover url.*.insteadOf rewrites we
-          # used in earlier attempts; they're no longer part of the
-          # contract.
+          done < <(git config --global --name-only --get-regexp '^http\.' || true)
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
-          # Wipe any stale netrc a previous run wrote.
+          done < <(git config --global --name-only --get-regexp '^url\.' || true)
           rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
@@ -195,18 +183,16 @@ jobs:
         run: |
           # See lint job for the full rationale. Env-scoped git config so
           # nothing persists across runs on self-hosted runners.
-          # Set via BOTH env-scoped config (inherited by child git
-          # processes in subsequent steps) AND --global (visible to the
-          # `git ls-remote` test we run right below in this same step,
-          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
-          # guarantees there's no stale --global extraheader that would
-          # have broken actions/checkout itself.
+          # Env-scoped git config ONLY — nothing in --global, so nothing
+          # persists to $HOME on self-hosted runners to break the next
+          # run's actions/checkout. Child processes (including git
+          # subprocesses spawned by Go) inherit the env and apply the
+          # extraheader at run time.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
-          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
@@ -234,17 +220,19 @@ jobs:
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
           fi
-          # Verify the extraheader route works with the same token git will
-          # use via `go mod download`. If this fails but the REST probe
-          # above succeeded, the extraheader is not being applied — likely
-          # because actions/checkout's --local config is winning over our
-          # env/--global config for the caller repo's directory.
-          echo "--- git ls-remote probe (via --global extraheader) ---"
-          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
-            echo "  OK: git can reach scraper-apis v0.2.0"
+          # Verify the extraheader route works with the live env config.
+          # env-scoped config only takes effect when git is invoked by the
+          # parent shell that runs this step, so we need to set the env
+          # vars locally to exercise it (GitHub exports $GITHUB_ENV only
+          # to subsequent steps, not the current one).
+          echo "--- git ls-remote probe (via env-scoped extraheader) ---"
+          if GIT_CONFIG_COUNT=1 \
+             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+             GIT_CONFIG_VALUE_0="Authorization: token $TOKEN" \
+             git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0 with env-scoped extraheader"
           else
-            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
-            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
+            echo "  FAIL: git ls-remote rejected the env-scoped extraheader."
           fi
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
@@ -261,27 +249,21 @@ jobs:
     runs-on: ${{ inputs.runner }}
     needs: [lint]
     steps:
-      # Self-hosted runners persist $HOME across jobs, so any git config
-      # --global set by a previous workflow run (including a stale
-      # http.<ivlholding>.extraheader with an old token) is active when
-      # actions/checkout runs. Wipe every such value before checkout so
-      # the workflow's own GITHUB_TOKEN — which is what checkout relies
-      # on for the caller repo itself — wins uncontested.
-      - name: Reset persistent ivlholding git auth state
+      # Self-hosted runners persist $HOME across jobs. Any git config
+      # --global set by a previous workflow run (stale extraheader,
+      # credential helper, url rewrite) is active when actions/checkout
+      # runs next. Wipe *every* http.* and url.* global config so the
+      # workflow's own GITHUB_TOKEN is the only credential in play for
+      # the caller-repo checkout. Configure-private-module-access below
+      # re-adds only env-scoped config that doesn't persist.
+      - name: Reset persistent git auth state
         run: |
-          # Remove every http.* extraheader scoped to an ivlholding URL.
-          # Leave non-ivlholding entries alone so unrelated configs
-          # survive.
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^http\..*ivlholding.*\.extraheader$' || true)
-          # Also defensively drop any leftover url.*.insteadOf rewrites we
-          # used in earlier attempts; they're no longer part of the
-          # contract.
+          done < <(git config --global --name-only --get-regexp '^http\.' || true)
           while IFS= read -r key; do
             git config --global --unset-all "$key" 2>/dev/null || true
-          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadof$' || true)
-          # Wipe any stale netrc a previous run wrote.
+          done < <(git config --global --name-only --get-regexp '^url\.' || true)
           rm -f ~/.netrc || true
       - uses: actions/checkout@v4
         with:
@@ -296,18 +278,16 @@ jobs:
         run: |
           # See lint job for the full rationale. Env-scoped git config so
           # nothing persists across runs on self-hosted runners.
-          # Set via BOTH env-scoped config (inherited by child git
-          # processes in subsequent steps) AND --global (visible to the
-          # `git ls-remote` test we run right below in this same step,
-          # where $GITHUB_ENV isn't yet re-read). Pre-checkout cleanup
-          # guarantees there's no stale --global extraheader that would
-          # have broken actions/checkout itself.
+          # Env-scoped git config ONLY — nothing in --global, so nothing
+          # persists to $HOME on self-hosted runners to break the next
+          # run's actions/checkout. Child processes (including git
+          # subprocesses spawned by Go) inherit the env and apply the
+          # extraheader at run time.
           {
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
             echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
           } >> "$GITHUB_ENV"
-          git config --global http.https://github.com/.extraheader "Authorization: token $TOKEN"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
@@ -335,16 +315,18 @@ jobs:
               echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
             fi
           fi
-          # Verify the extraheader route works with the same token git will
-          # use via `go mod download`. If this fails but the REST probe
-          # above succeeded, the extraheader is not being applied — likely
-          # because actions/checkout's --local config is winning over our
-          # env/--global config for the caller repo's directory.
-          echo "--- git ls-remote probe (via --global extraheader) ---"
-          if git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
-            echo "  OK: git can reach scraper-apis v0.2.0"
+          # Verify the extraheader route works with the live env config.
+          # env-scoped config only takes effect when git is invoked by the
+          # parent shell that runs this step, so we need to set the env
+          # vars locally to exercise it (GitHub exports $GITHUB_ENV only
+          # to subsequent steps, not the current one).
+          echo "--- git ls-remote probe (via env-scoped extraheader) ---"
+          if GIT_CONFIG_COUNT=1 \
+             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+             GIT_CONFIG_VALUE_0="Authorization: token $TOKEN" \
+             git ls-remote --exit-code https://github.com/ivlholding/scraper-apis v0.2.0 2>&1 | head -3; then
+            echo "  OK: git can reach scraper-apis v0.2.0 with env-scoped extraheader"
           else
-            echo "  FAIL: git ls-remote rejected. Dumping effective auth config:"
-            git config --list --show-origin 2>&1 | grep -iE '^file|^command:|http\.|url\.' | sed 's|token [^ ]*|token ***|g' | head -20
+            echo "  FAIL: git ls-remote rejected the env-scoped extraheader."
           fi
       - run: go build ./...
