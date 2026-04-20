@@ -59,7 +59,22 @@ jobs:
           echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
-          # Purge stale VCS cache that may have cached bad credentials.
+          # Disable GOAUTH=netrc that actions/setup-go@v5 wires with the
+          # workflow's default GITHUB_TOKEN. That token is scoped to the
+          # caller repo only — it has no read access to sibling
+          # ivlholding/* repos, so Go's netrc lookup "wins" over our
+          # PAT-backed insteadOf rewrite and GitHub rejects the creds with
+          # "Invalid username or token". Setting GOAUTH= (empty) disables
+          # Go's auth layer so git's configured insteadOf is consulted
+          # instead.
+          echo "GOAUTH=" >> "$GITHUB_ENV"
+          # Neutralise the http.https://github.com/.extraheader that
+          # actions/checkout@v4 writes into the local repo's git config —
+          # go mod download inherits HOME/global config, not --local, but
+          # unsetting it defensively keeps this runner's state clean.
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+          # Purge stale VCS cache that may have cached bad credentials
+          # from earlier runs on self-hosted runners.
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -85,6 +100,12 @@ jobs:
           echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
+          # See lint job for the full rationale. Short version: disable
+          # GOAUTH's default netrc (workflow GITHUB_TOKEN lacks cross-repo
+          # access) and clear checkout's extraheader so the PAT-backed
+          # insteadOf rewrite is the only credential source.
+          echo "GOAUTH=" >> "$GITHUB_ENV"
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
@@ -117,6 +138,11 @@ jobs:
           echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
+          # See lint job for the full rationale. Disable GOAUTH's default
+          # netrc and clear checkout's extraheader so the PAT-backed
+          # insteadOf is the only credential source Go sees.
+          echo "GOAUTH=" >> "$GITHUB_ENV"
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           # Purge any stale VCS cache poisoned by previous runs (esp. on
           # self-hosted runners where /root/go/pkg/mod persists).
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
