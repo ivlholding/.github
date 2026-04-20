@@ -73,34 +73,36 @@ jobs:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
           # Auth story for a fine-grained PAT reaching private ivlholding
-          # repos from within GitHub-hosted runners:
+          # repos from within self-hosted runners:
           #
-          # Earlier attempts used url."https://x-access-token:${TOKEN}@..."
-          # insteadOf rewrites — that's the classic pattern for classic
-          # PATs and GitHub App installation tokens. For FINE-GRAINED PATs
-          # GitHub rejects the `x-access-token` basic-auth username with
-          # "Invalid username or token" (verified against this workflow's
-          # own token: HTTP probe with `Authorization: token $TOKEN`
-          # returns 200, but git ls-remote over the same token via basic-
-          # auth returns 401). The PAT authenticates only via the token/
-          # Bearer header form.
+          # Earlier attempts tried url.<pat-embedded-url>.insteadOf (git
+          # replaces URL, sends PAT as basic-auth username "x-access-token"
+          # — REJECTED by GitHub for fine-grained PATs, accepted only for
+          # classic PATs + GitHub App tokens), and http.extraheader at the
+          # ivlholding/ URL prefix (didn't trigger reliably during go mod
+          # download's background git clones).
           #
-          # Fix: point git at an http.extraheader carrying an Authorization
-          # header — same shape the API probe uses. This is scoped to
-          # github.com/ivlholding URLs so it doesn't stomp on the
-          # workflow's default GITHUB_TOKEN for same-repo operations.
-          # See https://docs.github.com/en/rest/overview/authenticating-to-the-rest-api
-          # for the header contract.
-          git config --global http.https://github.com/ivlholding/.extraheader "Authorization: token $TOKEN"
-          # We still need netrc for the module proxy path (proxy.golang.org
-          # returns 404 for private repos, then Go falls back to direct,
-          # where git takes over). Fine-grained PATs do authenticate over
-          # netrc basic auth iff the username is the user / "oauth2" — not
-          # "x-access-token". Use "oauth2".
+          # Final: use the broadest URL prefix — `https://github.com/` —
+          # same form actions/checkout writes, but with our PAT in
+          # `Authorization: token <pat>` header form (verified against
+          # GitHub's REST API via the probe below: returns 200). Env-var
+          # form (GIT_CONFIG_COUNT/KEY/VALUE) so it's job-scoped and does
+          # not persist to $HOME on self-hosted runners. Overrides
+          # actions/checkout's --local extraheader because it's set to
+          # a longer prefix match at --global tier.
+          {
+            echo "GIT_CONFIG_COUNT=1"
+            echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
+            echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
+          } >> "$GITHUB_ENV"
+          # Netrc defense-in-depth for Go's direct-proxy fallback path.
+          # Fine-grained PATs authenticate with login=oauth2 (NOT
+          # x-access-token) over netrc basic auth.
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
-          # Clear actions/checkout's extraheader on the same URL scope so
-          # the GITHUB_TOKEN basic-auth doesn't override ours.
+          # Drop actions/checkout's --local extraheader in the caller
+          # repo so nothing races with our env-scoped config if Go clones
+          # into this dir for any reason.
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           # Go env.
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
@@ -172,9 +174,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          # See lint job for the full rationale (fine-grained PAT doesn't
-          # authenticate via `x-access-token:` basic-auth; use token header).
-          git config --global http.https://github.com/ivlholding/.extraheader "Authorization: token $TOKEN"
+          # See lint job for the full rationale. Env-scoped git config so
+          # nothing persists across runs on self-hosted runners.
+          {
+            echo "GIT_CONFIG_COUNT=1"
+            echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
+            echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
+          } >> "$GITHUB_ENV"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
@@ -250,9 +256,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          # See lint job for the full rationale (fine-grained PAT doesn't
-          # authenticate via `x-access-token:` basic-auth; use token header).
-          git config --global http.https://github.com/ivlholding/.extraheader "Authorization: token $TOKEN"
+          # See lint job for the full rationale. Env-scoped git config so
+          # nothing persists across runs on self-hosted runners.
+          {
+            echo "GIT_CONFIG_COUNT=1"
+            echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader"
+            echo "GIT_CONFIG_VALUE_0=Authorization: token $TOKEN"
+          } >> "$GITHUB_ENV"
           install -m 0600 /dev/null ~/.netrc
           printf 'machine github.com\nlogin oauth2\npassword %s\n' "$TOKEN" > ~/.netrc
           git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
