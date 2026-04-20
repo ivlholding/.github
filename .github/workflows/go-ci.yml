@@ -5,8 +5,8 @@ name: Reusable Go CI
 #
 # Private module support: set `private-modules: true` and pass `secrets.IVL_MODULES_TOKEN`
 # (a fine-grained PAT with Contents:Read on ivlholding/*). The workflow then configures
-# GOPRIVATE + GOSUMDB=off + a git insteadOf rewrite so `go mod download` can fetch
-# private repos like scraper-core.
+# GOPRIVATE + GOSUMDB=off + ~/.netrc + a git insteadOf rewrite so `go mod download`
+# can fetch private repos like scraper-core.
 
 on:
   workflow_call:
@@ -50,32 +50,37 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          # Use env-var-based git config so the rewrite is scoped to this
-          # job and every child process inherits it (including git invoked
-          # by `go mod download`). Independent of $HOME / user changes,
-          # which have bitten us on self-hosted runners.
-          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          # Three independent auth surfaces must all agree before `go mod
+          # download` can reach a private sibling repo. Point every one of
+          # them at the same PAT so whichever wins the race still produces
+          # a successful authentication:
+          #
+          #   (1) ~/.netrc — actions/setup-go@v5 sets GOAUTH=netrc and
+          #       writes this file with the workflow's default GITHUB_TOKEN,
+          #       which has no cross-repo access. Overwrite with the PAT.
+          #   (2) git url.<...>.insteadOf via `git config --global` — used
+          #       when Go shells out to git directly. `git config --global`
+          #       is chosen over GIT_CONFIG_COUNT/KEY/VALUE because URL-
+          #       shaped subsection names (with ':' and '/') have hit
+          #       parser edge cases on older git versions.
+          #   (3) actions/checkout@v4's http.extraheader sits on the
+          #       checked-out repo only (not on GOMODCACHE clones) and is
+          #       a log-level red herring here — clear it anyway so the
+          #       self-hosted runner state is clean between jobs.
+          install -m 0600 /dev/null ~/.netrc
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > ~/.netrc
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+          # Go env.
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
-          # Disable GOAUTH=netrc that actions/setup-go@v5 wires with the
-          # workflow's default GITHUB_TOKEN. That token is scoped to the
-          # caller repo only — it has no read access to sibling
-          # ivlholding/* repos, so Go's netrc lookup "wins" over our
-          # PAT-backed insteadOf rewrite and GitHub rejects the creds with
-          # "Invalid username or token". Setting GOAUTH= (empty) disables
-          # Go's auth layer so git's configured insteadOf is consulted
-          # instead.
-          echo "GOAUTH=" >> "$GITHUB_ENV"
-          # Neutralise the http.https://github.com/.extraheader that
-          # actions/checkout@v4 writes into the local repo's git config —
-          # go mod download inherits HOME/global config, not --local, but
-          # unsetting it defensively keeps this runner's state clean.
-          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
-          # Purge stale VCS cache that may have cached bad credentials
-          # from earlier runs on self-hosted runners.
+          # Purge any stale VCS cache poisoned by a previous failed auth
+          # attempt (self-hosted runners persist /root/go/pkg/mod).
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
+          # Diagnostic: surface the configured rewrites in CI logs with
+          # the token redacted so failures elsewhere are easy to triage.
+          echo "--- configured url rewrites ---"
+          git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
       - uses: golangci/golangci-lint-action@v7
         with:
           version: latest
@@ -95,18 +100,16 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          # See lint job for the full rationale.
+          install -m 0600 /dev/null ~/.netrc
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > ~/.netrc
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
-          # See lint job for the full rationale. Short version: disable
-          # GOAUTH's default netrc (workflow GITHUB_TOKEN lacks cross-repo
-          # access) and clear checkout's extraheader so the PAT-backed
-          # insteadOf rewrite is the only credential source.
-          echo "GOAUTH=" >> "$GITHUB_ENV"
-          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
+          echo "--- configured url rewrites ---"
+          git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
       - name: Coverage summary
@@ -133,17 +136,14 @@ jobs:
         env:
           TOKEN: ${{ secrets.IVL_MODULES_TOKEN }}
         run: |
-          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_KEY_0=url.https://x-access-token:${TOKEN}@github.com/ivlholding/.insteadOf" >> "$GITHUB_ENV"
-          echo "GIT_CONFIG_VALUE_0=https://github.com/ivlholding/" >> "$GITHUB_ENV"
+          # See lint job for the full rationale.
+          install -m 0600 /dev/null ~/.netrc
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > ~/.netrc
+          git config --global url."https://x-access-token:${TOKEN}@github.com/ivlholding/".insteadOf "https://github.com/ivlholding/"
+          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
           echo "GOPRIVATE=github.com/ivlholding/*" >> "$GITHUB_ENV"
           echo "GOSUMDB=off" >> "$GITHUB_ENV"
-          # See lint job for the full rationale. Disable GOAUTH's default
-          # netrc and clear checkout's extraheader so the PAT-backed
-          # insteadOf is the only credential source Go sees.
-          echo "GOAUTH=" >> "$GITHUB_ENV"
-          git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
-          # Purge any stale VCS cache poisoned by previous runs (esp. on
-          # self-hosted runners where /root/go/pkg/mod persists).
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
+          echo "--- configured url rewrites ---"
+          git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
       - run: go build ./...
