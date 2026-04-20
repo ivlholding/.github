@@ -81,6 +81,25 @@ jobs:
           # the token redacted so failures elsewhere are easy to triage.
           echo "--- configured url rewrites ---"
           git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
+          # Direct probe: verify the PAT actually authenticates against
+          # the private dep before Go tries. Prints the HTTP status only
+          # (no token value) so a wrong/stale secret is obvious in the
+          # logs without guessing from downstream symptoms.
+          echo "--- IVL_MODULES_TOKEN probe ---"
+          if [ -z "$TOKEN" ]; then
+            echo "  ERROR: TOKEN is empty — IVL_MODULES_TOKEN secret is not set in this repo"
+          else
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
+              "https://api.github.com/repos/ivlholding/scraper-apis")
+            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
+            if [ "$code" != "200" ]; then
+              echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
+              echo "    - IVL_MODULES_TOKEN secret holds a stale / regenerated token value"
+              echo "    - token expired / revoked"
+              echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
+            fi
+          fi
       - uses: golangci/golangci-lint-action@v7
         with:
           version: latest
@@ -110,6 +129,25 @@ jobs:
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
           echo "--- configured url rewrites ---"
           git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
+          # Direct probe: verify the PAT actually authenticates against
+          # the private dep before Go tries. Prints the HTTP status only
+          # (no token value) so a wrong/stale secret is obvious in the
+          # logs without guessing from downstream symptoms.
+          echo "--- IVL_MODULES_TOKEN probe ---"
+          if [ -z "$TOKEN" ]; then
+            echo "  ERROR: TOKEN is empty — IVL_MODULES_TOKEN secret is not set in this repo"
+          else
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
+              "https://api.github.com/repos/ivlholding/scraper-apis")
+            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
+            if [ "$code" != "200" ]; then
+              echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
+              echo "    - IVL_MODULES_TOKEN secret holds a stale / regenerated token value"
+              echo "    - token expired / revoked"
+              echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
+            fi
+          fi
       - name: Unit tests
         run: go test ./... -race -count=1 -coverprofile=coverage.out -covermode=atomic
       - name: Coverage summary
@@ -146,4 +184,23 @@ jobs:
           rm -rf "$(go env GOMODCACHE)/cache/vcs" 2>/dev/null || true
           echo "--- configured url rewrites ---"
           git config --global --get-regexp '^url\.' | sed 's|x-access-token:[^@]*@|x-access-token:***@|g' || true
+          # Direct probe: verify the PAT actually authenticates against
+          # the private dep before Go tries. Prints the HTTP status only
+          # (no token value) so a wrong/stale secret is obvious in the
+          # logs without guessing from downstream symptoms.
+          echo "--- IVL_MODULES_TOKEN probe ---"
+          if [ -z "$TOKEN" ]; then
+            echo "  ERROR: TOKEN is empty — IVL_MODULES_TOKEN secret is not set in this repo"
+          else
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: token $TOKEN" \
+              "https://api.github.com/repos/ivlholding/scraper-apis")
+            echo "  GET /repos/ivlholding/scraper-apis -> HTTP $code"
+            echo "  token length: ${#TOKEN}   prefix: ${TOKEN:0:8}..."
+            if [ "$code" != "200" ]; then
+              echo "  FAIL: token cannot read ivlholding/scraper-apis. Likely causes:"
+              echo "    - IVL_MODULES_TOKEN secret holds a stale / regenerated token value"
+              echo "    - token expired / revoked"
+              echo "    - fine-grained PAT missing Contents:Read on scraper-apis"
+            fi
+          fi
       - run: go build ./...
